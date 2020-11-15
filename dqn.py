@@ -48,7 +48,7 @@ class DQN:#모델 선언
     # Action function to choose the best action given the q-function if not exploring based on epsilon p값에 의한 예측이 아닐때
     def choose_action(self, state, allowed_actions): #action을 선택 (parameter로 선택가능한 action이 들어옴)
         select = False
-        if (self.step%10000 == 0):#약 10만번 step에서 3만번의 scheduling 발생. 10000번마다 epsilon이 감소
+        if (self.step%50000 == 0):#약 10만번 step에서 3만번의 scheduling 발생. 10000번마다 epsilon이 감소
             self.epsilon = max(self.epsilon_min, pow(self.epsilon,int(self.step/10000 +1)))
         #print ("epsilon", self.epsilon)
         self.step+=1

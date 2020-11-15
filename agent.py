@@ -3,8 +3,6 @@
 
 # # Reinforcement learning Simpy Env&Agent
 
-# In[8]:
-
 
 import simpy
 import pandas as pd
@@ -19,6 +17,31 @@ from itertools import product
 import math
 from dqn import DQN
 import time
+
+#npz
+mse_loss=[] #episode의 진행에 따른 mse_loss의 변화율 graph
+flow_success=[] #episode의 진행에 따른 flow_success rate
+pexp=[] #action choice 진행에 따른 pexp 변화
+record = []
+
+state=[0,0,0]#초기 state
+action=[0,0,0]#초기 action 
+Tsc=2 #scheduling interval을 구성하는 flow update interval의 수
+Tfu=1 #flow update interval의 시간단위(0.1초로 가정)
+sources = ['s0', 's1', 's2']
+destinations = ['d0', 'd1', 'd2']
+filesize=[random.randrange(10,50) for source in range(len(sources))] #단위 Gb
+deadline=[int(filesize[source]/3) for source in range(len(sources))] #sum_rmin이  9Gbps, 각각 3
+request = {
+    'sources' : sources,
+    'destinations' : destinations, 
+    'filesize' : filesize, #단위는 Mbps
+    'deadline' : deadline,
+    'value' : [None for source in sources] #아직 전송되지 않았으면 None, 제시간에 전송되었으면 1, 제시간에 전송되지 않았으면 0
+}  
+
+env = simpy.Environment()
+dqn_agent = DQN()
 
 #보상 함수1: deadline이 적게 남을수록 pacing rate을 많이 할당    
 def reward_function(deadlines,action,value): 
@@ -36,16 +59,14 @@ def reward_function(deadlines,action,value):
         drem_max=np.max(deadlines)
         
         
-    for dremi in range(len(deadlines)): #active한 flow, deadline이 작을수록 action이 많이 할당되어야 reward또한 커짐
-        if (value[dremi]==None): #active
+    for dremi in active[0]: #active한 flow, deadline이 작을수록 action이 많이 할당되어야 reward또한 커짐
+        if (deadline[dremi]>=0): #active and positive deadline / deadtive, negative deadline flows get reward 0
             reward += ((drem_max - deadlines[dremi])*action[dremi])
-        else: #deactive
-            reward += 0
-        
+            
     return reward
 
     
-def episode(env,DQN,Tsc,Tfu,allowed_actions): #pacing rate가 각 flow에게 할당
+def episode(env,DQN,Tsc,Tfu,allowed_actions,filename): #pacing rate가 각 flow에게 할당
     global action
     global state
     global request
@@ -88,6 +109,8 @@ def episode(env,DQN,Tsc,Tfu,allowed_actions): #pacing rate가 각 flow에게 할
                         state[s]=math.ceil(request['filesize'][s]/request['deadline'][s])
             
             print ("state", state)
+            print ("deadline", request['deadline'])
+            print ("filesize",request['filesize'])
 
             #action 결정
             
@@ -176,11 +199,11 @@ def episode(env,DQN,Tsc,Tfu,allowed_actions): #pacing rate가 각 flow에게 할
             else:
                 print ("source {} deadine 충족하지 못함".format(i))
                     
-        if terminal: #학습 종료 시 검사
+        if (terminal==True): #학습 종료 시 검사
             if (np.mean(np.array(flow_success)[:m]) >= s) and (np.all(np.array(select[:m])==True) ):
                 #결과 저장
                 
-                np.savez('simulation history 1106_notebook_adam 1e-3',loss = mse_loss, success = flow_success, p = pexp, record = record )
+                np.savez(filename,loss = mse_loss, success = flow_success, p = pexp, record = record )
                 dqn_agent.save_model("dqn_policy.h5")
                 print ("성공률 90%이상, 학습 종료")
                 sys.exit()
@@ -206,30 +229,6 @@ def episode(env,DQN,Tsc,Tfu,allowed_actions): #pacing rate가 각 flow에게 할
         print("--------------------------------------------------")
         cnt+=1
 
-#npz
-mse_loss=[] #episode의 진행에 따른 mse_loss의 변화율 graph
-flow_success=[] #episode의 진행에 따른 flow_success rate
-pexp=[] #action choice 진행에 따른 pexp 변화
-record = []
-
-state=[0,0,0]#초기 state
-action=[0,0,0]#초기 action ->고칠것
-Tsc=2 #scheduling interval을 구성하는 flow update interval의 수
-Tfu=1 #flow update interval의 시간단위(0.1초로 가정)
-sources = ['s0', 's1', 's2']
-destinations = ['d0', 'd1', 'd2']
-filesize=[random.randrange(10,50) for source in range(len(sources))] #단위 Gb
-deadline=[int(filesize[source]/3) for source in range(len(sources))] #sum_rmin이  9Gbps, 각각 3
-request = {
-    'sources' : sources,
-    'destinations' : destinations, 
-    'filesize' : filesize, #단위는 Mbps
-    'deadline' : deadline,
-    'value' : [None for source in sources] #아직 전송되지 않았으면 None, 제시간에 전송되었으면 1, 제시간에 전송되지 않았으면 0
-}  
-
-env = simpy.Environment()
-dqn_agent = DQN()
 
     
 def main(filename):    
@@ -244,8 +243,8 @@ def main(filename):
             allowed_actions.append(i) #d는 66개의 조합
 
     start = time.time()  # 시작 시간 저장
-    env.process(episode(env,DQN,Tsc,Tfu,allowed_actions))
-    env.run(until=400000)#10만 초 동안 가동
+    env.process(episode(env,DQN,Tsc,Tfu,allowed_actions,filename))
+    env.run(until=100000)#10만 초 동안 가동
 
     #결과 저장
     np.savez(filname,loss = mse_loss, success = flow_success, p = pexp, record = record )
